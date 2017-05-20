@@ -5,9 +5,13 @@
  * Compile with "gcc -pthread -o main main.c"
  ***********************************/
 
+ #include <pthread.h>
  #include <stdio.h>
  #include <stdlib.h>
  #include <string.h>
+ #include <unistd.h>
+ #include <semaphore.h>
+ #include <stdbool.h>
 
 #define MIN(a,b) \
    ({ __typeof__ (a) _a = (a); \
@@ -26,6 +30,16 @@ typedef struct {
 	int pid, remainingTime;
 	CpuBlock * block;
 } RunningProcess;
+
+/* A union to help with remembering the correct read & write indexes
+ */
+typedef union {
+	int fd[2];
+	struct {
+		int read;
+		int write;
+	} s;
+} PipeDescriptor;
 
 /* Used to sort the CPU Blocks by their arrival times
  */
@@ -125,19 +139,67 @@ double findAverage(CpuBlock blocks[], int nbBlocks, double(*getN)(CpuBlock*)) {
 	return sum / nbBlocks;
 }
 
-/* The main method.
- */
-int main(void) {
+void threadTwo(PipeDescriptor* pd) {
+	double results[2];
+	if (read(pd->s.read, results, sizeof(results)) <= 0) {
+		perror("Error reading from the pipe\n");
+		return;
+	}
+	close(pd->s.read);
+
+
+	FILE* f = fopen("output.txt", "w");
+	if (f == NULL) {
+		perror("Error opening output file\n");
+		return;
+	}
+
+	fprintf(f, "Average Turnaround: %.2f\nAverage Wait: %.2f\n", results[0], results[1]);
+	fclose(f);
+}
+
+void threadOne(void) {
 	CpuBlock blocks[10];
 	int nbBlocks = loadCpuBlocks(blocks, 10);
 	if (nbBlocks <= 0) {
 		perror("There was a problem reading the input file\n");
-		return 1;
+		return;
 	}
 
 	calculateCompletionTimes(blocks, nbBlocks);
 
-	printf("Average Wait: %f\nAverage TT: %f\n",
-			findAverage(blocks, nbBlocks, getWaitTime),
-			findAverage(blocks, nbBlocks, getTurnaround));
+	PipeDescriptor pd;
+	int pipeErr = pipe(pd.fd);
+	if (pipeErr < 0) {
+		perror("Error opening pipe: %d");
+		return;
+	}
+
+	pthread_t t2;
+	if (pthread_create(&t2, NULL, (void *)threadTwo, (void *)&pd) != 0) {
+		perror("Error creating thread two\n");
+		return;
+	}
+
+	double avg[2] = {
+		findAverage(blocks, nbBlocks, getWaitTime),
+		findAverage(blocks, nbBlocks, getTurnaround)
+	};
+
+	write(pd.s.write, avg, sizeof(avg));
+	close(pd.s.write);
+
+	pthread_join(t2, NULL);
+}
+
+/* The main method.
+ */
+int main(void) {
+	pthread_t t1;
+	if (pthread_create(&t1, NULL, (void *)threadOne, NULL) != 0) {
+		perror("Problem creating thread one\n");
+		return -1;
+	}
+
+	pthread_join(t1, NULL);
 }
