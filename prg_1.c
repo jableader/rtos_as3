@@ -5,13 +5,13 @@
  * Compile with "gcc -pthread -o main main.c"
  ***********************************/
 
- #include <pthread.h>
- #include <stdio.h>
- #include <stdlib.h>
- #include <string.h>
- #include <unistd.h>
- #include <semaphore.h>
- #include <stdbool.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <semaphore.h>
+#include <stdbool.h>
 
 #define MIN(a,b) \
    ({ __typeof__ (a) _a = (a); \
