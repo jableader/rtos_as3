@@ -12,11 +12,15 @@
 #include <unistd.h>
 #include <semaphore.h>
 #include <stdbool.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define MIN(a,b) \
    ({ __typeof__ (a) _a = (a); \
        __typeof__ (b) _b = (b); \
      _a < _b ? _a : _b; })
+
+#define FIFO_NAME "HeyLookItsTheFifo"
 
 const int quantum = 4;
 
@@ -139,14 +143,19 @@ double findAverage(CpuBlock blocks[], int nbBlocks, double(*getN)(CpuBlock*)) {
 	return sum / nbBlocks;
 }
 
-void threadTwo(PipeDescriptor* pd) {
-	double results[2];
-	if (read(pd->s.read, results, sizeof(results)) <= 0) {
+void threadTwo(void) {
+  int fifo = open(FIFO_NAME, O_RDONLY);
+  if (fifo == -1) {
+    printf("Error opening the FIFO for reading.\n");
+    exit(1);
+  }
+
+  double results[2];
+	if (read(fifo, results, sizeof(results)) <= 0) {
 		perror("Error reading from the pipe\n");
 		return;
 	}
-	close(pd->s.read);
-
+	close(fifo);
 
 	FILE* f = fopen("output.txt", "w");
 	if (f == NULL) {
@@ -168,15 +177,14 @@ void threadOne(void) {
 
 	calculateCompletionTimes(blocks, nbBlocks);
 
-	PipeDescriptor pd;
-	int pipeErr = pipe(pd.fd);
-	if (pipeErr < 0) {
-		perror("Error opening pipe: %d");
-		return;
+	if (mkfifo(FIFO_NAME, 0666) != 0) {
+    // Probably a FIFO with that name exists. We can ignore this so long as the
+    // fifo can be opened futher down
+		printf("Warning: There was an error when creating the FIFO.\n");
 	}
 
 	pthread_t t2;
-	if (pthread_create(&t2, NULL, (void *)threadTwo, (void *)&pd) != 0) {
+	if (pthread_create(&t2, NULL, (void *)threadTwo, NULL) != 0) {
 		perror("Error creating thread two\n");
 		return;
 	}
@@ -186,8 +194,14 @@ void threadOne(void) {
 		findAverage(blocks, nbBlocks, getTurnaround)
 	};
 
-	write(pd.s.write, avg, sizeof(avg));
-	close(pd.s.write);
+  int fifo = open(FIFO_NAME, O_WRONLY);
+  if (fifo == -1) {
+    printf("Error opening the FIFO for writing.\n");
+    exit(1);
+  }
+
+	write(fifo, avg, sizeof(avg));
+	close(fifo);
 
 	pthread_join(t2, NULL);
 }
