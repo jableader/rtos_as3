@@ -1,14 +1,24 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include  <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
 
 #define SUPPORTED_REFERENCES 100
 
-volatile bool interruptRecieved = false;
+typedef enum { NotReady, WaitingForSignal, Signalled } ReadyState;
+
+volatile ReadyState state = NotReady;
 
 void interruptHandler(int i) {
-	interruptRecieved = true;
+	if (state == NotReady) {
+		printf("\n\nYou haven't provided the information needed for the calculations.\nThe process will now terminate\n");
+		exit(1);
+	}
+
+	putchar('\n');
+	state = Signalled;
 }
 
 bool contains(int arr[], int length, int value) {
@@ -21,8 +31,8 @@ bool contains(int arr[], int length, int value) {
 	return false;
 }
 
-void printDetails(int faults, int frames[], int nbFrames) {
-	printf("Faults: %d, Frame: [%d", faults, frames[0]);
+void printDetails(int ref, int faults, int frames[], int nbFrames) {
+	printf("Hit: %d, Faults: %d, Frame: [%d", ref, faults, frames[0]);
 	for (int i = 1; i < nbFrames; i++) {
 		if (frames[i] < 0)
 			printf(", X");
@@ -39,14 +49,14 @@ void calculatePageFaults(int nbFrames, int reference[], int nbRefs) {
 	int fIndex = 0;
 
 	int pageFaults = 0;
-	for (int i = 0; i < nbFrames; i++) {
+	for (int i = 0; i < nbRefs; i++) {
 		if (!contains(frames, nbFrames, reference[i])) {
 			frames[fIndex] = reference[i];
 			fIndex = (fIndex + 1) % nbFrames;
 			pageFaults++;
 		}
 
-		printDetails(pageFaults, frames, nbFrames);
+		printDetails(reference[i], pageFaults, frames, nbFrames);
 	}
 }
 
@@ -62,42 +72,50 @@ int readReferenceString(int reference[]) {
 	}
 
 	int rIndex = 0;
-	for (int i = 0; buffer[i] != '\0'; i += 2) {
+	for (int i = 0; buffer[i] != '\0' ; i += 2) {
 		if (buffer[i] < '0' || buffer[i] > '9') {
-			printf("Invalid char at %d. Expected number got %c (%d)", i, buffer[i], (int)buffer[i]);
+			printf("Invalid char at %d. Expected number got '%c' (%d)\n", i, buffer[i], (int)buffer[i]);
 			return -1;
 		}
 
-		reference[rIndex] = buffer[i] - '0';
+		reference[rIndex++] = buffer[i] - '0';
 
-		if (buffer[i + 1] != ',' && buffer[i + 1] != '\0') {
-			printf("Invalid char at %d. Expected comma got %c", i + 1, buffer[i + 1]);
+		char next = buffer[i + 1];
+		if (next != ',' && next != '\n' && next != '\0') {
+			printf("Invalid char at %d. Expected comma got '%c'\n", i + 1, buffer[i + 1]);
 		}
 	}
 
 	return rIndex;
 }
 
+void flushStdin(void) {
+	char ch;
+	while ((ch = getchar()) != '\n' && ch != EOF);
+}
+
 int main(void) {
+	signal(SIGINT, interruptHandler);
+
 	printf("Please enter the number of frames (< 10): ");
 
 	int nbFrames;
-	if (scanf("%d", &nbFrames) != 1 || nbFrames > 9 || nbFrames < 1) {
+	if (scanf(" %d", &nbFrames) != 1 || nbFrames > 9 || nbFrames < 1) {
 		perror("Not a valid frame count (1-9). Please run the program again.\n");
 		return 1;
 	}
+	flushStdin();
 
 	int reference[SUPPORTED_REFERENCES];
 	int nbRefs = readReferenceString(reference);
 	if (nbRefs <= 0) {
-		perror("Bad reference string. Please run the program again.\n");
+		printf("Bad reference string. Please run the program again.\n");
 		return 2;
 	}
 
+	state = WaitingForSignal;
 	printf("Press Ctrl + C when you're ready to see the results!\n");
-	signal(SIGINT, interruptHandler);
-
-	while (!interruptRecieved) {
+	while (state != Signalled) {
 		sleep(0);
 	}
 
