@@ -22,7 +22,10 @@
 
 #define FIFO_NAME "HeyLookItsTheFifo"
 
-const int quantum = 4;
+// Some variables to be passed to the threads. Normally I would use arguments
+// but this is too trivial a case to warrent it.
+int quantum = 4;
+char* outputFilePath;
 
 /* The details for a record in the input file
  */
@@ -157,7 +160,7 @@ void threadTwo(void) {
 	}
 	close(fifo);
 
-	FILE* f = fopen("output.txt", "w");
+	FILE* f = fopen(outputFilePath, "w");
 	if (f == NULL) {
 		perror("Error opening output file\n");
 		return;
@@ -208,7 +211,24 @@ void threadOne(void) {
 
 /* The main method.
  */
-int main(void) {
+int main(int argc, char *argv[]) {
+  if (argc != 3) {
+    printf("Usage: %s quantum outputPath\nFor example: %s 4 output.txt\n", argv[0], argv[0]);
+    return 0;
+  }
+
+  quantum = atoi(argv[1]);
+  if (quantum <= 0) {
+    printf("Quantum must be greater than zero.");
+    return 1;
+  }
+
+  outputFilePath = argv[2];
+  if (strlen(outputFilePath) <= 0) {
+    printf("File path cannot be empty\n");
+    return 1;
+  }
+
 	pthread_t t1;
 	if (pthread_create(&t1, NULL, (void *)threadOne, NULL) != 0) {
 		perror("Problem creating thread one\n");
