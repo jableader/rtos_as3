@@ -94,17 +94,18 @@ void flushStdin(void) {
 	while ((ch = getchar()) != '\n' && ch != EOF);
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
 	signal(SIGINT, interruptHandler);
+	if (argc != 2) {
+    printf("Usage: %s number_of_frames\nFor example: %s 4\n", argv[0], argv[0]);
+    return 0;
+  }
 
-	printf("Please enter the number of frames (< 10): ");
-
-	int nbFrames;
-	if (scanf(" %d", &nbFrames) != 1 || nbFrames > 9 || nbFrames < 1) {
+  int nbFrames = atoi(argv[1]);
+	if (nbFrames < 1 || nbFrames > 9) {
 		perror("Not a valid frame count (1-9). Please run the program again.\n");
 		return 1;
 	}
-	flushStdin();
 
 	int reference[SUPPORTED_REFERENCES];
 	int nbRefs = readReferenceString(reference);
